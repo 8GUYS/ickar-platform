@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: ickar-api
+    runtime: node
+    region: oregon
+    plan: free
+    rootDir: packages/api
+    buildCommand: npm install
+    startCommand: node src/index.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: JWT_SECRET
+        sync: false
+      - key: PAYSTACK_SECRET_KEY
+        sync: false
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET_NAME
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: CORS_ORIGIN
+        value: https://ickar.vercel.app
+    healthCheckPath: /health

@@ -1,0 +1,4 @@
+app_identifier("ng.ickar.app")
+apple_id("REPLACE_WITH_APPLE_ID")
+itc_team_id("REPLACE_WITH_ITC_TEAM_ID")
+team_id("REPLACE_WITH_TEAM_ID")

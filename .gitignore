@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.env
+*.log
+.DS_Store
+Thumbs.db
+.expo/
+.claude/
+play-store-key.json
+google-services.json
+GoogleService-Info.plist
+*.docx
+generate_agreement.py

@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  # Local PostgreSQL with RLS enabled
+  postgres:
+    image: postgres:16-alpine
+    container_name: ickar-db
+    environment:
+      POSTGRES_USER: ickar_user
+      POSTGRES_PASSWORD: ickar_password
+      POSTGRES_DB: ickar_production
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: always
+
+  # Redis for background queue & session cache
+  redis:
+    image: redis:7-alpine
+    container_name: ickar-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: always
+
+volumes:
+  postgres_data:
+  redis_data:

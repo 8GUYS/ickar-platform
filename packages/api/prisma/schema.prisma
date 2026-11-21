@@ -1,0 +1,163 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  SUBSCRIBER
+  CREATOR
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum MediaType {
+  AUDIOBOOK
+  EBOOK
+  BUNDLE
+}
+
+enum OrderStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  REFUNDED
+}
+
+enum EntitlementType {
+  SUBSCRIPTION
+  PURCHASE
+  GIFT
+  ADMIN_GRANT
+}
+
+model Tenant {
+  id           String      @id @default(uuid())
+  name         String
+  slug         String      @unique
+  customDomain String?     @unique
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  users        User[]
+  mediaItems   MediaItem[]
+  orders       Order[]
+
+  @@map("tenants")
+}
+
+model User {
+  id           String        @id @default(uuid())
+  tenantId     String
+  email        String        @unique
+  passwordHash String
+  name         String
+  role         Role          @default(SUBSCRIBER)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  orders       Order[]
+  entitlements Entitlement[]
+  subscription Subscription?
+
+  @@index([tenantId])
+  @@map("users")
+}
+
+model MediaItem {
+  id                     String        @id @default(uuid())
+  tenantId               String
+  slug                   String
+  title                  String
+  author                 String
+  narrator               String?
+  coverUrl               String
+  type                   MediaType     @default(AUDIOBOOK)
+  duration               String?
+  pages                  Int?
+  rating                 Float         @default(5.0)
+  priceKobo              Int           // Stored in kobo/minor units to avoid float rounding
+  isSubscriptionIncluded Boolean       @default(true)
+  category               String
+  description            String
+  hlsManifestKey         String?       // Private Cloudflare R2 path
+  pdfKey                 String?       // Private Cloudflare R2 path
+  published              Boolean       @default(true)
+  createdAt              DateTime      @default(now())
+  updatedAt              DateTime      @updatedAt
+
+  tenant                 Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  orderItems             OrderItem[]
+  entitlements           Entitlement[]
+
+  @@unique([tenantId, slug])
+  @@index([tenantId, category])
+  @@map("media_items")
+}
+
+model Order {
+  id           String      @id @default(uuid())
+  tenantId     String
+  userId       String
+  amountKobo   Int
+  paystackRef  String      @unique
+  status       OrderStatus @default(PENDING)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  tenant       Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items        OrderItem[]
+
+  @@index([tenantId, userId])
+  @@map("orders")
+}
+
+model OrderItem {
+  id           String    @id @default(uuid())
+  orderId      String
+  mediaItemId  String
+  priceKobo    Int
+  creatorShare Int       // 80% creator share in kobo
+
+  order        Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  mediaItem    MediaItem @relation(fields: [mediaItemId], references: [id])
+
+  @@map("order_items")
+}
+
+model Entitlement {
+  id          String          @id @default(uuid())
+  userId      String
+  mediaItemId String
+  accessType  EntitlementType @default(SUBSCRIPTION)
+  grantedAt   DateTime        @default(now())
+  expiresAt   DateTime?
+
+  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mediaItem   MediaItem       @relation(fields: [mediaItemId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, mediaItemId])
+  @@index([userId])
+  @@map("entitlements")
+}
+
+model Subscription {
+  id          String    @id @default(uuid())
+  userId      String    @unique
+  paystackRef String    @unique
+  planCode    String    @default("PLN_ickar_monthly_2500")
+  status      String    @default("active")
+  startedAt   DateTime  @default(now())
+  expiresAt   DateTime
+
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("subscriptions")
+}

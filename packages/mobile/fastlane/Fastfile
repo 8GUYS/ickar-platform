@@ -1,0 +1,20 @@
+default_platform(:ios)
+
+platform :android do
+  lane :android_beta do
+    sh("eas build --platform android --profile preview --non-interactive")
+    supply(track: "internal", skip_upload_apk: false)
+  end
+
+  lane :android_production do
+    sh("eas build --platform android --profile production --non-interactive")
+    supply(track: "production", aab: true)
+  end
+end
+
+platform :ios do
+  lane :ios_testflight do
+    sh("eas build --platform ios --profile production --non-interactive")
+    upload_to_testflight(skip_waiting_for_build_processing: true)
+  end
+end
