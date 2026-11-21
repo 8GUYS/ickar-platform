@@ -221,9 +221,6 @@ export function App() {
               I
             </div>
             <span className="font-extrabold text-xl tracking-tight text-white">ICKAR</span>
-            <span className="text-[10px] bg-indigo-500/20 text-indigo-400 px-2 py-0.5 rounded-full font-semibold border border-indigo-500/30">
-              SPRINT 2 COMPLETE
-            </span>
           </div>
 
           <nav className="hidden md:flex items-center space-x-6 text-sm font-medium text-slate-400">
@@ -233,18 +230,14 @@ export function App() {
             >
               Discover
             </button>
-            <button 
-              onClick={() => {
-                if (user?.role === 'admin') {
-                  setActiveTab('admin');
-                } else {
-                  alert('Admin command requires administrative credentials (admin@ickar.ng)');
-                }
-              }} 
-              className={`hover:text-white transition-colors cursor-pointer ${activeTab === 'admin' ? 'text-amber-400 font-semibold' : ''}`}
-            >
-              Admin Command
-            </button>
+            {user?.role === 'admin' && (
+              <button 
+                onClick={() => setActiveTab('admin')} 
+                className={`hover:text-white transition-colors cursor-pointer ${activeTab === 'admin' ? 'text-amber-400 font-semibold' : ''}`}
+              >
+                Admin Command
+              </button>
+            )}
           </nav>
         </div>
 
