@@ -34,6 +34,7 @@ import {
   type AdminStats,
   type UserTier,
   type QuotaInfo,
+  type MediaPickerItem,
 } from './services/api';
 import { useAuth } from './context/AuthContext';
 import { AuthModal } from './components/AuthModal';
@@ -72,7 +73,11 @@ export function App() {
   const [downloaderUrl, setDownloaderUrl] = useState('');
   const [isExtracting, setIsExtracting] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
-  const [downloadResult, setDownloadResult] = useState<{ title: string; filename: string; mediaType: string; quota: QuotaInfo } | null>(null);
+  const [downloadResult, setDownloadResult] = useState<{
+    title: string; filename: string; mediaType: string;
+    platform?: string; resolvedUrl?: string; quota: QuotaInfo; note?: string;
+    picker?: MediaPickerItem[];
+  } | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [downloadQuota, setDownloadQuota] = useState<QuotaInfo | null>(null);
 
@@ -186,13 +191,33 @@ export function App() {
         title: info.title,
         filename: info.filename,
         mediaType: info.mediaType,
+        platform: info.platform,
+        resolvedUrl: info.resolvedUrl,
         quota: info.quotaCheck,
+        note: info.note,
+        picker: info.picker,
       });
     } catch (e: any) {
       setDownloadError(e.message || 'Failed to process URL');
     } finally {
       setIsExtracting(false);
     }
+  };
+
+  const selectPickerItem = (index: number) => {
+    setDownloadResult((prev) => {
+      const item = prev?.picker?.[index];
+      if (!prev || !item) return prev;
+      const total = prev.picker?.length ?? 1;
+      return {
+        ...prev,
+        resolvedUrl: item.url,
+        filename: item.filename,
+        title: item.filename,
+        mediaType: item.mediaType,
+        note: total > 1 ? `${total} items in this post — item ${index + 1} selected` : prev.note,
+      };
+    });
   };
 
   const handleDownload = async () => {
@@ -205,7 +230,7 @@ export function App() {
     }
     setIsDownloading(true);
     try {
-      await downloadMedia(downloaderUrl.trim(), downloadResult.filename, token);
+      await downloadMedia(downloaderUrl.trim(), downloadResult.filename, token, downloadResult.resolvedUrl);
       // Refresh quota
       const q = await getDownloadQuota(token);
       setDownloadQuota(q);
@@ -334,7 +359,7 @@ export function App() {
                 onClick={() => setActiveTab('admin')} 
                 className={`hover:text-white transition-colors cursor-pointer ${activeTab === 'admin' ? 'text-amber-400 font-semibold' : ''}`}
               >
-                Admin Command
+                Admin
               </button>
             )}
           </nav>
@@ -419,12 +444,12 @@ export function App() {
                 {upgradeContext === 'download' ? <Download className="w-7 h-7 text-indigo-400" /> : <Sparkles className="w-7 h-7 text-indigo-400" />}
               </div>
               <h2 className="text-2xl font-extrabold text-white">
-                {upgradeContext === 'download' ? 'More Downloads' : 'Full Access'}
+                {upgradeContext === 'download' ? 'You\'re out of downloads' : 'Unlock the full library'}
               </h2>
               <p className="text-slate-400 text-sm">
                 {upgradeContext === 'download'
-                  ? 'You\'ve hit your daily download limit. Upgrade for more.'
-                  : 'Stream all audiobooks, eBooks, videos, and more.'}
+                  ? 'Today\'s downloads are used up. A higher plan gives you more.'
+                  : 'Listen, read, and watch everything on ICKAR.'}
               </p>
             </div>
 
@@ -440,9 +465,9 @@ export function App() {
                   <span className="text-slate-400 text-xs">/mo</span>
                 </div>
                 <ul className="text-xs text-slate-300 space-y-1.5">
-                  <li className="flex items-center space-x-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" /><span>Unlimited streaming</span></li>
-                  <li className="flex items-center space-x-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" /><span>All audiobooks, eBooks & videos</span></li>
-                  <li className="flex items-center space-x-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" /><span>15 downloads/day</span></li>
+                  <li className="flex items-center space-x-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" /><span>Listen and watch without limits</span></li>
+                  <li className="flex items-center space-x-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" /><span>Every book, audiobook, and video</span></li>
+                  <li className="flex items-center space-x-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" /><span>15 saves a day</span></li>
                 </ul>
                 <button
                   onClick={() => handleActivateTier('pro')}
@@ -464,8 +489,8 @@ export function App() {
                 </div>
                 <ul className="text-xs text-slate-300 space-y-1.5">
                   <li className="flex items-center space-x-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" /><span>Everything in Pro</span></li>
-                  <li className="flex items-center space-x-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" /><span>Unlimited downloads</span></li>
-                  <li className="flex items-center space-x-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" /><span>Download to device</span></li>
+                  <li className="flex items-center space-x-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" /><span>Save as many files as you want</span></li>
+                  <li className="flex items-center space-x-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" /><span>Keep them on your device</span></li>
                 </ul>
                 <button
                   onClick={() => handleActivateTier('promax')}
@@ -502,7 +527,7 @@ export function App() {
                       <Download className="w-4 h-4 text-indigo-400" />
                       <span className="text-sm font-bold text-white">Universal Downloader</span>
                       <span className="text-[10px] text-slate-500 bg-slate-800 px-2 py-0.5 rounded-full border border-white/5">
-                        MP3 · MP4 · PDF · Direct Links
+                        YouTube · TikTok · Instagram · MP3 · MP4 · PDF
                       </span>
                     </div>
                     {/* Quota display */}
@@ -531,7 +556,7 @@ export function App() {
                         value={downloaderUrl}
                         onChange={(e) => { setDownloaderUrl(e.target.value); setDownloadResult(null); setDownloadError(null); }}
                         onKeyDown={(e) => e.key === 'Enter' && handleExtract()}
-                        placeholder="Paste any direct .mp3, .mp4, .pdf link..."
+                        placeholder="Paste a YouTube, TikTok, Instagram, or direct file link..."
                         className="w-full bg-[#0B0F17] text-sm rounded-xl pl-9 pr-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 border border-white/5 text-slate-200 placeholder-slate-500"
                       />
                     </div>
@@ -547,10 +572,17 @@ export function App() {
 
                   {/* Result preview */}
                   {downloadResult && (
-                    <div className="flex items-center justify-between bg-[#0B0F17] border border-emerald-500/20 rounded-xl p-4">
-                      <div className="space-y-0.5">
-                        <p className="text-sm font-semibold text-white truncate max-w-xs">{downloadResult.title}</p>
-                        <p className="text-xs text-slate-400 capitalize">{downloadResult.mediaType} file</p>
+                    <div className="bg-[#0B0F17] border border-emerald-500/20 rounded-xl p-4 space-y-3">
+                      <div className="flex items-center justify-between gap-3">
+                      <div className="space-y-0.5 min-w-0">
+                        <p className="text-sm font-semibold text-white truncate">{downloadResult.title}</p>
+                        <p className="text-xs text-slate-400">
+                          {downloadResult.platform ? `${downloadResult.platform} · ` : ''}
+                          <span className="capitalize">{downloadResult.mediaType}</span>
+                        </p>
+                        {downloadResult.note && (
+                          <p className="text-xs text-slate-500">{downloadResult.note}</p>
+                        )}
                         {!downloadResult.quota.allowed && (
                           <p className="text-xs text-amber-400 font-semibold">
                             {downloadResult.quota.reason} — upgrade to continue
@@ -571,6 +603,28 @@ export function App() {
                           : downloadResult.quota.allowed ? <Download className="w-4 h-4" /> : <Crown className="w-4 h-4" />}
                         <span>{isDownloading ? 'Downloading...' : downloadResult.quota.allowed ? 'Download' : 'Upgrade'}</span>
                       </button>
+                      </div>
+                      {downloadResult.picker && downloadResult.picker.length > 1 && (
+                        <div className="flex flex-wrap gap-2">
+                          {downloadResult.picker.map((item, index) => {
+                            const selected = item.url === downloadResult.resolvedUrl;
+                            return (
+                              <button
+                                key={`${item.type || item.mediaType}-${index}`}
+                                type="button"
+                                onClick={() => selectPickerItem(index)}
+                                className={`text-xs font-semibold px-3 py-1.5 rounded-lg border cursor-pointer capitalize ${
+                                  selected
+                                    ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40'
+                                    : 'bg-white/5 text-slate-400 border-white/10 hover:text-white'
+                                }`}
+                              >
+                                {item.type || item.mediaType} {index + 1}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   )}
 

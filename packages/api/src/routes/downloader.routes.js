@@ -1,7 +1,14 @@
 // ============================================================
 // ICKAR API — Universal Media Downloader
-// POST /api/downloader/extract  — get metadata for a URL
-// GET  /api/downloader/stream   — stream file to browser
+// POST /api/downloader/extract  — get metadata / resolve URL
+// POST /api/downloader/stream   — stream file to browser
+// GET  /api/downloader/quota    — check daily quota
+//
+// Social media (YouTube, TikTok, Instagram, Twitter/X, etc.)
+//   → resolved via a Cobalt instance (COBALT_API_URL, optional COBALT_API_KEY)
+// Direct links (.mp3 .mp4 .pdf etc.)
+//   → piped directly through Node https
+//
 // Quota: free=3/day, pro=15/day, promax=unlimited
 // ============================================================
 
@@ -18,36 +25,100 @@ import {
 
 export const downloaderRouter = Router();
 
-// Supported platforms for metadata extraction
-const YOUTUBE_REGEX = /(?:youtube\.com\/watch\?v=|youtu\.be\/)([A-Za-z0-9_-]{11})/;
-const DIRECT_REGEX = /\.(mp3|mp4|wav|ogg|m4a|aac|flac|webm|pdf|epub|mkv)(\?.*)?$/i;
+// ---- URL classifiers ----
+const DIRECT_EXT = /\.(mp3|mp4|wav|ogg|m4a|aac|flac|webm|pdf|epub|mkv|avi|mov|zip)(\?.*)?$/i;
 
-function detectMediaType(url) {
-  const ext = url.match(/\.([a-z0-9]+)(\?.*)?$/i)?.[1]?.toLowerCase();
-  if (['mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac'].includes(ext)) return 'audio';
-  if (['mp4', 'webm', 'mkv', 'avi', 'mov'].includes(ext)) return 'video';
-  if (['pdf', 'epub'].includes(ext)) return 'document';
-  if (YOUTUBE_REGEX.test(url)) return 'youtube';
-  return 'unknown';
+const SOCIAL_PATTERNS = [
+  { name: 'YouTube',    re: /(?:youtube\.com|youtu\.be)/i },
+  { name: 'TikTok',    re: /tiktok\.com/i },
+  { name: 'Instagram', re: /instagram\.com/i },
+  { name: 'Twitter',   re: /(?:twitter\.com|x\.com)/i },
+  { name: 'Reddit',    re: /reddit\.com/i },
+  { name: 'SoundCloud',re: /soundcloud\.com/i },
+  { name: 'Vimeo',     re: /vimeo\.com/i },
+  { name: 'Twitch',    re: /twitch\.tv/i },
+  { name: 'Pinterest', re: /pinterest\.com/i },
+  { name: 'Dailymotion', re: /dailymotion\.com/i },
+];
+
+function detectSource(urlStr) {
+  for (const p of SOCIAL_PATTERNS) {
+    if (p.re.test(urlStr)) return { type: 'social', platform: p.name };
+  }
+  if (DIRECT_EXT.test(urlStr)) {
+    const ext = urlStr.match(DIRECT_EXT)?.[1]?.toLowerCase();
+    return { type: 'direct', mediaType: mediaTypeForExt(ext), ext };
+  }
+  return { type: 'unknown' };
 }
 
-function fetchWithRedirects(urlString, maxRedirects = 5) {
+// ---- Cobalt API call ----
+// Docs: https://github.com/imputnet/cobalt/blob/current/docs/api.md
+// Public api.cobalt.tools requires auth, so point COBALT_API_URL at an instance you can use.
+function cobaltEndpoint() {
+  const raw = (process.env.COBALT_API_URL || 'https://api.cobalt.tools/').trim();
+  return raw.endsWith('/') ? raw : `${raw}/`;
+}
+
+async function resolveCobalt(url) {
+  const endpoint = new URL(cobaltEndpoint());
+  const lib = endpoint.protocol === 'http:' ? http : https;
+  const body = JSON.stringify({
+    url,
+    downloadMode: 'auto',
+    filenameStyle: 'pretty',
+  });
+  const headers = {
+    'Content-Type': 'application/json',
+    Accept: 'application/json',
+    'Content-Length': Buffer.byteLength(body),
+    'User-Agent': 'ICKAR/1.0 (https://ickar.ng)',
+  };
+  if (process.env.COBALT_API_KEY) {
+    headers.Authorization = `Api-Key ${process.env.COBALT_API_KEY}`;
+  }
+
   return new Promise((resolve, reject) => {
-    function doFetch(urlStr, redirectsLeft) {
-      const parsedUrl = new URL(urlStr);
-      const lib = parsedUrl.protocol === 'https:' ? https : http;
+    const req = lib.request(endpoint, {
+      method: 'POST',
+      headers,
+      timeout: 20000,
+    }, (res) => {
+      let data = '';
+      res.on('data', chunk => { data += chunk; });
+      res.on('end', () => {
+        try {
+          const json = JSON.parse(data);
+          resolve({ statusCode: res.statusCode, json });
+        } catch {
+          reject(new Error('Invalid JSON from Cobalt API'));
+        }
+      });
+    });
+
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('Cobalt API timed out')); });
+    req.write(body);
+    req.end();
+  });
+}
+
+// ---- Generic pipe helper ----
+function fetchStream(urlString, maxRedirects = 5) {
+  return new Promise((resolve, reject) => {
+    function doFetch(urlStr, left) {
+      let parsed;
+      try { parsed = new URL(urlStr); } catch { return reject(new Error('Invalid URL')); }
+      const lib = parsed.protocol === 'https:' ? https : http;
       const req = lib.get(urlStr, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (compatible; ICKARBot/1.0)',
-        },
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; ICKARBot/1.0)' },
         timeout: 15000,
       }, (res) => {
-        if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location) {
-          if (redirectsLeft <= 0) return reject(new Error('Too many redirects'));
-          doFetch(res.headers.location, redirectsLeft - 1);
-        } else {
-          resolve(res);
+        if ([301,302,303,307,308].includes(res.statusCode) && res.headers.location) {
+          if (left <= 0) return reject(new Error('Too many redirects'));
+          return doFetch(res.headers.location, left - 1);
         }
+        resolve(res);
       });
       req.on('error', reject);
       req.on('timeout', () => { req.destroy(); reject(new Error('Request timed out')); });
@@ -56,11 +127,98 @@ function fetchWithRedirects(urlString, maxRedirects = 5) {
   });
 }
 
-// -------------------------------------------------------
+function deriveFilename(urlStr, platform, fallbackExt = 'mp4') {
+  try {
+    const u = new URL(urlStr);
+    const parts = u.pathname.split('/').filter(Boolean);
+    const last = decodeURIComponent(parts[parts.length - 1] || '');
+    if (last && last.includes('.')) return last;
+    if (platform) return `${platform.toLowerCase()}-download-${Date.now()}.${fallbackExt}`;
+    return `ickar-download-${Date.now()}`;
+  } catch {
+    return `ickar-download-${Date.now()}.${fallbackExt}`;
+  }
+}
+
+function extFromName(name) {
+  return String(name || '').split('?')[0].match(/\.([a-z0-9]+)$/i)?.[1]?.toLowerCase() || '';
+}
+
+function mediaTypeForExt(ext) {
+  if (['mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac', 'opus'].includes(ext)) return 'audio';
+  if (['mp4', 'webm', 'mkv', 'avi', 'mov', 'gif'].includes(ext)) return 'video';
+  if (['pdf', 'epub'].includes(ext)) return 'document';
+  return 'file';
+}
+
+function mediaTypeForItem(name, pickerType) {
+  if (pickerType === 'photo') return 'file';
+  if (pickerType === 'video' || pickerType === 'gif') return 'video';
+  const ext = extFromName(name);
+  if (!ext) return 'video';
+  return mediaTypeForExt(ext);
+}
+
+function cobaltErrorMessage(json, platform) {
+  const code = json?.error?.code || '';
+  if (String(code).includes('auth')) {
+    return 'Social downloads need a Cobalt instance. Set COBALT_API_URL and COBALT_API_KEY on the API.';
+  }
+  return code || `Could not download from ${platform}`;
+}
+
+function describeCobalt(json, platform) {
+  if (!json || json.status === 'error' || json.error) {
+    return { ok: false, message: cobaltErrorMessage(json, platform) };
+  }
+
+  if (json.status === 'picker') {
+    const picker = (json.picker || []).filter((item) => item?.url).map((item, index) => {
+      const ext = item.type === 'photo' ? 'jpg' : item.type === 'gif' ? 'gif' : 'mp4';
+      const filename = item.filename || `${platform.toLowerCase()}-${index + 1}-${Date.now()}.${ext}`;
+      return {
+        url: item.url,
+        type: item.type,
+        filename,
+        mediaType: mediaTypeForItem(filename, item.type),
+      };
+    });
+    if (!picker.length) {
+      return { ok: false, message: `No downloadable items found on this ${platform} post.` };
+    }
+    const first = picker[0];
+    return {
+      ok: true,
+      resolvedUrl: first.url,
+      title: first.filename,
+      filename: first.filename,
+      mediaType: first.mediaType,
+      picker,
+      pickerCount: picker.length,
+      note: picker.length > 1 ? `${picker.length} items in this post — first item selected` : undefined,
+    };
+  }
+
+  const resolvedUrl = json.url;
+  if (!resolvedUrl) {
+    return { ok: false, message: `Could not resolve a file from this ${platform} link.` };
+  }
+  const filename = json.filename || deriveFilename(resolvedUrl, platform);
+  return {
+    ok: true,
+    resolvedUrl,
+    title: filename,
+    filename,
+    mediaType: mediaTypeForItem(filename),
+    contentType: json.contentType,
+  };
+}
+
+// ============================================================
 // POST /api/downloader/extract
 // Body: { url: string }
-// Returns: { title, mediaType, contentType, contentLength, downloadable, quota }
-// -------------------------------------------------------
+// Returns metadata + resolved download URL (never streams here)
+// ============================================================
 downloaderRouter.post('/extract', requireAuth, async (req, res) => {
   const { url } = req.body;
   if (!url || typeof url !== 'string') {
@@ -68,56 +226,73 @@ downloaderRouter.post('/extract', requireAuth, async (req, res) => {
   }
 
   let parsedUrl;
-  try {
-    parsedUrl = new URL(url);
-  } catch {
+  try { parsedUrl = new URL(url); } catch {
     return res.status(400).json({ error: 'Invalid URL' });
   }
 
-  // Check quota before doing any work
   const quotaCheck = checkDownloadQuota(req.user.id);
+  const source = detectSource(url);
 
-  const mediaType = detectMediaType(url);
-
-  if (mediaType === 'youtube') {
+  // ---- Unknown URL type ----
+  if (source.type === 'unknown') {
     return res.json({
-      title: 'YouTube video',
-      mediaType: 'youtube',
-      downloadable: false,
-      quotaCheck,
-      message: 'YouTube direct download is not supported. Please use a direct media URL (mp3, mp4, etc).',
+      url, downloadable: false, quotaCheck,
+      message: 'Could not detect a downloadable file at this URL. Try a direct .mp3/.mp4/.pdf link or a supported social media URL.',
     });
   }
 
-  if (mediaType === 'unknown' && !DIRECT_REGEX.test(url)) {
-    return res.json({
-      title: parsedUrl.hostname,
-      mediaType: 'unknown',
-      downloadable: false,
-      quotaCheck,
-      message: 'Could not detect a downloadable media file at this URL. Try pasting a direct .mp3, .mp4, or .pdf link.',
-    });
+  // ---- Social media — resolve via Cobalt ----
+  if (source.type === 'social') {
+    try {
+      const { json } = await resolveCobalt(url);
+      const described = describeCobalt(json, source.platform);
+
+      if (!described.ok) {
+        return res.json({
+          url, downloadable: false, quotaCheck,
+          platform: source.platform,
+          message: described.message,
+        });
+      }
+
+      return res.json({
+        url,
+        resolvedUrl: described.resolvedUrl,
+        title: described.title,
+        filename: described.filename,
+        platform: source.platform,
+        mediaType: described.mediaType,
+        contentType: described.contentType,
+        downloadable: true,
+        quotaCheck,
+        picker: described.picker,
+        pickerCount: described.pickerCount,
+        note: described.note,
+      });
+
+    } catch (err) {
+      return res.status(502).json({ error: 'Cobalt API unreachable', detail: err.message });
+    }
   }
 
+  // ---- Direct link — HEAD to get metadata ----
   try {
-    // HEAD request to get metadata
-    const response = await fetchWithRedirects(url);
+    const response = await fetchStream(url);
     const contentType = response.headers['content-type'] || 'application/octet-stream';
     const contentLength = response.headers['content-length'];
-    // Abort HEAD-equivalent (we just needed headers)
     response.destroy();
 
-    // Derive a filename from URL
     const pathParts = parsedUrl.pathname.split('/');
     const filename = decodeURIComponent(pathParts[pathParts.length - 1] || 'download');
 
     return res.json({
       url,
+      resolvedUrl: url,
       title: filename,
-      mediaType,
+      filename,
+      mediaType: source.mediaType,
       contentType,
       contentLength: contentLength ? parseInt(contentLength, 10) : null,
-      filename,
       downloadable: true,
       quotaCheck,
     });
@@ -126,26 +301,19 @@ downloaderRouter.post('/extract', requireAuth, async (req, res) => {
   }
 });
 
-// -------------------------------------------------------
+// ============================================================
 // POST /api/downloader/stream
-// Body: { url: string, filename?: string }
-// Streams the file directly to the client as an attachment
-// -------------------------------------------------------
+// Body: { url: string, resolvedUrl?: string, filename?: string }
+// Streams the file to browser as attachment — quota enforced here
+// ============================================================
 downloaderRouter.post('/stream', requireAuth, async (req, res) => {
-  const { url, filename } = req.body;
+  const { url, resolvedUrl, filename } = req.body;
 
   if (!url || typeof url !== 'string') {
     return res.status(400).json({ error: 'url is required' });
   }
 
-  let parsedUrl;
-  try {
-    parsedUrl = new URL(url);
-  } catch {
-    return res.status(400).json({ error: 'Invalid URL' });
-  }
-
-  // Check and enforce quota
+  // Enforce quota
   const quotaCheck = checkDownloadQuota(req.user.id);
   if (!quotaCheck.allowed) {
     return res.status(429).json({
@@ -157,11 +325,37 @@ downloaderRouter.post('/stream', requireAuth, async (req, res) => {
     });
   }
 
-  // Increment BEFORE streaming (prevents abuse on slow connections)
+  // Decide which URL to actually stream
+  let streamUrl = resolvedUrl || url;
+  let dlFilename = filename;
+
+  // If no resolvedUrl was provided and it's a social URL, resolve now
+  if (!resolvedUrl) {
+    const source = detectSource(url);
+    if (source.type === 'social') {
+      try {
+        const { json } = await resolveCobalt(url);
+        const described = describeCobalt(json, source.platform);
+        if (!described.ok) {
+          return res.status(502).json({ error: described.message });
+        }
+        streamUrl = described.resolvedUrl;
+        dlFilename = dlFilename || described.filename;
+      } catch (err) {
+        return res.status(502).json({ error: 'Cobalt API unreachable', detail: err.message });
+      }
+    }
+  }
+
+  if (!dlFilename) {
+    dlFilename = deriveFilename(streamUrl, null);
+  }
+
+  // Increment quota BEFORE streaming
   incrementDownloadCount(req.user.id);
 
   try {
-    const response = await fetchWithRedirects(url);
+    const response = await fetchStream(streamUrl);
 
     if (response.statusCode && response.statusCode >= 400) {
       return res.status(502).json({ error: `Remote server returned ${response.statusCode}` });
@@ -170,22 +364,13 @@ downloaderRouter.post('/stream', requireAuth, async (req, res) => {
     const contentType = response.headers['content-type'] || 'application/octet-stream';
     const contentLength = response.headers['content-length'];
 
-    // Derive filename
-    let dlFilename = filename;
-    if (!dlFilename) {
-      const pathParts = parsedUrl.pathname.split('/');
-      dlFilename = decodeURIComponent(pathParts[pathParts.length - 1] || 'ickar-download');
-    }
-
     res.setHeader('Content-Type', contentType);
     res.setHeader('Content-Disposition', `attachment; filename="${dlFilename}"`);
     if (contentLength) res.setHeader('Content-Length', contentLength);
-    res.setHeader('X-ICKAR-Quota-Used', quotaCheck.used + 1);
-    res.setHeader('X-ICKAR-Quota-Limit', quotaCheck.quota === -1 ? 'unlimited' : quotaCheck.quota);
+    res.setHeader('X-ICKAR-Quota-Used', String(quotaCheck.used + 1));
+    res.setHeader('X-ICKAR-Quota-Limit', quotaCheck.quota === -1 ? 'unlimited' : String(quotaCheck.quota));
 
-    // Pipe directly to response — zero disk usage
     response.pipe(res);
-
     response.on('error', (err) => {
       console.error('[DOWNLOADER] Stream error:', err.message);
       if (!res.headersSent) res.status(502).json({ error: 'Stream failed' });
@@ -197,12 +382,11 @@ downloaderRouter.post('/stream', requireAuth, async (req, res) => {
   }
 });
 
-// GET /api/downloader/quota — check current user's download quota
+// ============================================================
+// GET /api/downloader/quota
+// ============================================================
 downloaderRouter.get('/quota', requireAuth, (req, res) => {
   const quotaCheck = checkDownloadQuota(req.user.id);
   const user = findUserById(req.user.id);
-  return res.json({
-    tier: user?.tier || 'free',
-    ...quotaCheck,
-  });
+  return res.json({ tier: user?.tier || 'free', ...quotaCheck });
 });

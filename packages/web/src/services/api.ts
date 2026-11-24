@@ -49,16 +49,28 @@ export interface QuotaInfo {
   reason?: string;
 }
 
+export interface MediaPickerItem {
+  url: string;
+  filename: string;
+  mediaType: 'audio' | 'video' | 'document' | 'file' | 'unknown';
+  type?: string;
+}
+
 export interface MediaExtractResult {
   url: string;
+  resolvedUrl?: string;         // Cobalt-resolved direct URL (social media)
   title: string;
-  mediaType: 'audio' | 'video' | 'document' | 'youtube' | 'unknown';
-  contentType: string;
-  contentLength: number | null;
+  platform?: string;            // 'YouTube' | 'TikTok' | 'Instagram' etc.
+  mediaType: 'audio' | 'video' | 'document' | 'file' | 'unknown';
+  contentType?: string;
+  contentLength?: number | null;
   filename: string;
   downloadable: boolean;
   quotaCheck: QuotaInfo;
   message?: string;
+  note?: string;
+  picker?: MediaPickerItem[];
+  pickerCount?: number;
 }
 
 // Fetch Catalog
@@ -149,14 +161,14 @@ export function getDownloadStreamUrl(_url: string, _filename: string): string {
   return `${API_BASE}/downloader/stream`;
 }
 
-export async function downloadMedia(url: string, filename: string, token: string): Promise<void> {
+export async function downloadMedia(url: string, filename: string, token: string, resolvedUrl?: string): Promise<void> {
   const res = await fetch(`${API_BASE}/downloader/stream`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`
     },
-    body: JSON.stringify({ url, filename })
+    body: JSON.stringify({ url, resolvedUrl, filename })
   });
 
   if (res.status === 429) {
