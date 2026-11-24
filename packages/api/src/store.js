@@ -189,12 +189,12 @@ export function incrementDownloadCount(userId) {
 
 export function checkDownloadQuota(userId) {
   const user = findUserById(userId);
-  if (!user) return { allowed: false, reason: 'User not found' };
+  if (!user) return { allowed: false, reason: "We couldn't find your account." };
   const tier = user.tier || 'free';
   const quota = DOWNLOAD_QUOTAS[tier];
   const used = getDownloadCount(userId);
   if (quota !== Infinity && used >= quota) {
-    return { allowed: false, used, quota, tier, reason: `Daily limit reached (${used}/${quota})` };
+    return { allowed: false, used, quota, tier, reason: "You've reached today's save limit." };
   }
   return { allowed: true, used, quota: quota === Infinity ? -1 : quota, tier };
 }

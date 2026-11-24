@@ -162,9 +162,9 @@ function mediaTypeForItem(name, pickerType) {
 function cobaltErrorMessage(json, platform) {
   const code = json?.error?.code || '';
   if (String(code).includes('auth')) {
-    return 'Social downloads need a Cobalt instance. Set COBALT_API_URL and COBALT_API_KEY on the API.';
+    return "Saving from social apps isn't available right now. Try a direct file link.";
   }
-  return code || `Could not download from ${platform}`;
+  return `We couldn't get that from ${platform}.`;
 }
 
 function describeCobalt(json, platform) {
@@ -184,7 +184,7 @@ function describeCobalt(json, platform) {
       };
     });
     if (!picker.length) {
-      return { ok: false, message: `No downloadable items found on this ${platform} post.` };
+      return { ok: false, message: "We couldn't find a file in that post." };
     }
     const first = picker[0];
     return {
@@ -195,13 +195,13 @@ function describeCobalt(json, platform) {
       mediaType: first.mediaType,
       picker,
       pickerCount: picker.length,
-      note: picker.length > 1 ? `${picker.length} items in this post — first item selected` : undefined,
+      note: picker.length > 1 ? `This post has ${picker.length} files. The first one is selected.` : undefined,
     };
   }
 
   const resolvedUrl = json.url;
   if (!resolvedUrl) {
-    return { ok: false, message: `Could not resolve a file from this ${platform} link.` };
+    return { ok: false, message: "We couldn't get a file from that link." };
   }
   const filename = json.filename || deriveFilename(resolvedUrl, platform);
   return {
@@ -222,12 +222,12 @@ function describeCobalt(json, platform) {
 downloaderRouter.post('/extract', requireAuth, async (req, res) => {
   const { url } = req.body;
   if (!url || typeof url !== 'string') {
-    return res.status(400).json({ error: 'url is required' });
+    return res.status(400).json({ error: 'Add a link first.' });
   }
 
   let parsedUrl;
   try { parsedUrl = new URL(url); } catch {
-    return res.status(400).json({ error: 'Invalid URL' });
+    return res.status(400).json({ error: "That doesn't look like a link." });
   }
 
   const quotaCheck = checkDownloadQuota(req.user.id);
@@ -237,7 +237,7 @@ downloaderRouter.post('/extract', requireAuth, async (req, res) => {
   if (source.type === 'unknown') {
     return res.json({
       url, downloadable: false, quotaCheck,
-      message: 'Could not detect a downloadable file at this URL. Try a direct .mp3/.mp4/.pdf link or a supported social media URL.',
+      message: "We couldn't find a video, song, or file at that link.",
     });
   }
 
@@ -271,7 +271,7 @@ downloaderRouter.post('/extract', requireAuth, async (req, res) => {
       });
 
     } catch (err) {
-      return res.status(502).json({ error: 'Cobalt API unreachable', detail: err.message });
+      return res.status(502).json({ error: "We couldn't reach the download service. Try again in a moment." });
     }
   }
 
@@ -297,7 +297,7 @@ downloaderRouter.post('/extract', requireAuth, async (req, res) => {
       quotaCheck,
     });
   } catch (err) {
-    return res.status(502).json({ error: 'Could not reach that URL', detail: err.message });
+    return res.status(502).json({ error: "We couldn't open that link." });
   }
 });
 
@@ -310,18 +310,18 @@ downloaderRouter.post('/stream', requireAuth, async (req, res) => {
   const { url, resolvedUrl, filename } = req.body;
 
   if (!url || typeof url !== 'string') {
-    return res.status(400).json({ error: 'url is required' });
+    return res.status(400).json({ error: 'Add a link first.' });
   }
 
   // Enforce quota
   const quotaCheck = checkDownloadQuota(req.user.id);
   if (!quotaCheck.allowed) {
     return res.status(429).json({
-      error: 'Download quota exceeded',
+      error: "You've reached today's save limit.",
       ...quotaCheck,
       upgradeTip: quotaCheck.tier === 'free'
-        ? 'Upgrade to Pro (₦2,000/mo) for 15 downloads/day'
-        : 'Upgrade to Pro Max (₦3,000/mo) for unlimited downloads',
+        ? 'Pro includes 15 saves a day.'
+        : 'Pro Max has no daily cap.',
     });
   }
 
@@ -342,7 +342,7 @@ downloaderRouter.post('/stream', requireAuth, async (req, res) => {
         streamUrl = described.resolvedUrl;
         dlFilename = dlFilename || described.filename;
       } catch (err) {
-        return res.status(502).json({ error: 'Cobalt API unreachable', detail: err.message });
+        return res.status(502).json({ error: "We couldn't reach the download service. Try again in a moment." });
       }
     }
   }
@@ -358,7 +358,7 @@ downloaderRouter.post('/stream', requireAuth, async (req, res) => {
     const response = await fetchStream(streamUrl);
 
     if (response.statusCode && response.statusCode >= 400) {
-      return res.status(502).json({ error: `Remote server returned ${response.statusCode}` });
+      return res.status(502).json({ error: "That file isn't available right now." });
     }
 
     const contentType = response.headers['content-type'] || 'application/octet-stream';
@@ -373,12 +373,12 @@ downloaderRouter.post('/stream', requireAuth, async (req, res) => {
     response.pipe(res);
     response.on('error', (err) => {
       console.error('[DOWNLOADER] Stream error:', err.message);
-      if (!res.headersSent) res.status(502).json({ error: 'Stream failed' });
+      if (!res.headersSent) res.status(502).json({ error: "The download didn't finish. Try again." });
     });
 
   } catch (err) {
     console.error('[DOWNLOADER] Fetch error:', err.message);
-    return res.status(502).json({ error: 'Failed to fetch media', detail: err.message });
+    return res.status(502).json({ error: "The download didn't finish. Try again." });
   }
 });
 

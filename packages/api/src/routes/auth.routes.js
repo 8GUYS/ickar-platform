@@ -21,12 +21,12 @@ const loginSchema = z.object({
 authRouter.post('/register', async (req, res) => {
   const result = registerSchema.safeParse(req.body);
   if (!result.success) {
-    return res.status(400).json({ error: 'Validation failed', issues: result.error.issues });
+    return res.status(400).json({ error: 'Please check your details and try again.', issues: result.error.issues });
   }
 
   const { name, email, password } = result.data;
   if (findUserByEmail(email)) {
-    return res.status(409).json({ error: 'Email already registered' });
+    return res.status(409).json({ error: 'That email already has an account.' });
   }
 
   const passwordHash = await bcrypt.hash(password, 12);
@@ -43,18 +43,18 @@ authRouter.post('/register', async (req, res) => {
 authRouter.post('/login', async (req, res) => {
   const result = loginSchema.safeParse(req.body);
   if (!result.success) {
-    return res.status(400).json({ error: 'Validation failed', issues: result.error.issues });
+    return res.status(400).json({ error: 'Please check your details and try again.', issues: result.error.issues });
   }
 
   const { email, password } = result.data;
   const user = findUserByEmail(email);
   if (!user) {
-    return res.status(401).json({ error: 'Invalid credentials' });
+    return res.status(401).json({ error: "That email or password doesn't match." });
   }
 
   const valid = await bcrypt.compare(password, user.passwordHash);
   if (!valid) {
-    return res.status(401).json({ error: 'Invalid credentials' });
+    return res.status(401).json({ error: "That email or password doesn't match." });
   }
 
   const token = signToken({ id: user.id, email: user.email, role: user.role });

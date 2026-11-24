@@ -13,7 +13,7 @@ export function verifyToken(token) {
 export function requireAuth(req, res, next) {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Missing or invalid Authorization header' });
+    return res.status(401).json({ error: 'Please sign in again.' });
   }
   const token = authHeader.split(' ')[1];
   try {
@@ -21,14 +21,14 @@ export function requireAuth(req, res, next) {
     req.user = payload;
     next();
   } catch {
-    return res.status(401).json({ error: 'Token invalid or expired' });
+    return res.status(401).json({ error: 'Please sign in again.' });
   }
 }
 
 export function requireAdmin(req, res, next) {
   requireAuth(req, res, () => {
     if (req.user?.role !== 'admin') {
-      return res.status(403).json({ error: 'Admin access required' });
+      return res.status(403).json({ error: "You don't have access to this page." });
     }
     next();
   });
