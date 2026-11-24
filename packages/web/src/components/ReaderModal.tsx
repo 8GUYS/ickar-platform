@@ -66,7 +66,7 @@ When an individual commits three hours to listening to a specialized monograph o
           <button 
             onClick={onClose}
             className="p-2 rounded-xl hover:bg-white/10 transition-colors cursor-pointer"
-            title="Close Reader"
+            title="Close"
           >
             <X className="w-5 h-5" />
           </button>
@@ -141,8 +141,8 @@ When an individual commits three hours to listening to a specialized monograph o
         <article className={`max-w-2xl w-full space-y-6 font-serif select-none ${fontSizes[fontSize]}`}>
           {/* Document Watermark (Security Layer) */}
           <div className="flex items-center justify-between border-b pb-4 text-xs font-sans opacity-50">
-            <span>ICKAR Protected Reader</span>
-            <span>Licensed to Registered Account</span>
+            <span>Your copy</span>
+            <span>For your account</span>
           </div>
 
           <h1 className="text-2xl sm:text-3xl font-bold font-sans tracking-tight mb-8">

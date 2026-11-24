@@ -24,8 +24,7 @@ import {
 import { 
   getCatalog, 
   checkEntitlement, 
-  getStreamingToken, 
-  verifyPaymentDev, 
+  verifyPaymentDev,
   getAdminStats,
   extractMediaInfo,
   downloadMedia,
@@ -57,8 +56,6 @@ export function App() {
   const [adminStats, setAdminStats] = useState<AdminStats | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [signedStreamInfo, setSignedStreamInfo] = useState<{ url?: string; expires?: number } | null>(null);
-
   // Auth & Reader modals
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [authModalMode, setAuthModalMode] = useState<'login' | 'register'>('login');
@@ -110,22 +107,13 @@ export function App() {
     async function evaluateAccess() {
       if (!token) {
         setHasEntitlement(false);
-        setSignedStreamInfo(null);
         return;
       }
       try {
         const entitled = await checkEntitlement(selectedMedia!.id, token);
         setHasEntitlement(entitled);
-
-        if (entitled) {
-          const stream = await getStreamingToken(selectedMedia!.id, token);
-          setSignedStreamInfo({ url: stream.audioStreamUrl, expires: stream.expiresAt });
-        } else {
-          setSignedStreamInfo(null);
-        }
       } catch {
         setHasEntitlement(false);
-        setSignedStreamInfo(null);
       }
     }
     evaluateAccess();
@@ -198,7 +186,7 @@ export function App() {
         picker: info.picker,
       });
     } catch (e: any) {
-      setDownloadError(e.message || 'Failed to process URL');
+      setDownloadError(e.message || "We couldn't read that link. Try again.");
     } finally {
       setIsExtracting(false);
     }
@@ -215,7 +203,7 @@ export function App() {
         filename: item.filename,
         title: item.filename,
         mediaType: item.mediaType,
-        note: total > 1 ? `${total} items in this post — item ${index + 1} selected` : prev.note,
+        note: total > 1 ? `File ${index + 1} of ${total}` : prev.note,
       };
     });
   };
@@ -241,7 +229,7 @@ export function App() {
         setIsUpgradeModalOpen(true);
         setUpgradeContext('download');
       } else {
-        setDownloadError(e.message || 'Download failed');
+        setDownloadError(e.message || "The download didn't finish. Try again.");
       }
     } finally {
       setIsDownloading(false);
@@ -261,12 +249,8 @@ export function App() {
       const q = await getDownloadQuota(token);
       setDownloadQuota(q);
       setIsUpgradeModalOpen(false);
-      if (selectedMedia) {
-        const stream = await getStreamingToken(selectedMedia.id, token);
-        setSignedStreamInfo({ url: stream.audioStreamUrl, expires: stream.expiresAt });
-      }
     } catch (e: any) {
-      alert(e.message || 'Upgrade failed');
+      alert(e.message || "We couldn't update your plan. Try again.");
     }
   };
 
@@ -372,7 +356,7 @@ export function App() {
               type="text" 
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search books, authors..." 
+              placeholder="Search books and authors" 
               className="bg-[#1E293B] text-sm rounded-full pl-9 pr-4 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 border border-white/5 w-60 text-slate-200 placeholder-slate-500"
             />
           </div>
@@ -478,7 +462,7 @@ export function App() {
               </div>
               {/* Pro Max */}
               <div className="bg-[#0B0F17] border border-amber-500/40 rounded-2xl p-5 space-y-3 relative overflow-hidden">
-                <div className="absolute top-2 right-2 bg-amber-500/20 text-amber-400 text-[10px] font-bold px-2 py-0.5 rounded-full border border-amber-500/30">BEST</div>
+                <div className="absolute top-2 right-2 bg-amber-500/20 text-amber-400 text-[10px] font-bold px-2 py-0.5 rounded-full border border-amber-500/30">Popular</div>
                 <div className="flex items-center space-x-2">
                   <Crown className="w-5 h-5 text-amber-400" />
                   <span className="font-bold text-white text-sm">Pro Max</span>
@@ -503,7 +487,7 @@ export function App() {
 
             {/* Free tier reminder */}
             <p className="text-center text-xs text-slate-500 mt-4">
-              Free: 3 downloads/day &nbsp;·&nbsp; Pro: 15/day &nbsp;·&nbsp; Pro Max: Unlimited
+              Free includes 3 saves a day. Pro includes 15. Pro Max has no cap.
             </p>
           </div>
         </div>
@@ -514,7 +498,7 @@ export function App() {
         {loading ? (
           <div className="flex flex-col items-center justify-center py-20 space-y-3">
             <RefreshCw className="w-8 h-8 text-indigo-400 animate-spin" />
-            <p className="text-sm text-slate-400 font-medium">Fetching media catalogue from ICKAR API...</p>
+            <p className="text-sm text-slate-400 font-medium">Loading your library...</p>
           </div>
         ) : (
           <>
@@ -525,17 +509,17 @@ export function App() {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-2">
                       <Download className="w-4 h-4 text-indigo-400" />
-                      <span className="text-sm font-bold text-white">Universal Downloader</span>
+                      <span className="text-sm font-bold text-white">Save a link</span>
                       <span className="text-[10px] text-slate-500 bg-slate-800 px-2 py-0.5 rounded-full border border-white/5">
-                        YouTube · TikTok · Instagram · MP3 · MP4 · PDF
+                        Videos, songs, and files
                       </span>
                     </div>
                     {/* Quota display */}
                     {user && downloadQuota && (
                       <span className="text-xs text-slate-400 font-medium">
                         {downloadQuota.quota === -1
-                          ? '∞ downloads'
-                          : `${downloadQuota.used}/${downloadQuota.quota} today`}
+                          ? 'Unlimited saves'
+                          : `${downloadQuota.used} of ${downloadQuota.quota} saved today`}
                         {' '}
                         <span className={`font-bold ${
                           userTier === 'promax' ? 'text-amber-400' :
@@ -556,7 +540,7 @@ export function App() {
                         value={downloaderUrl}
                         onChange={(e) => { setDownloaderUrl(e.target.value); setDownloadResult(null); setDownloadError(null); }}
                         onKeyDown={(e) => e.key === 'Enter' && handleExtract()}
-                        placeholder="Paste a YouTube, TikTok, Instagram, or direct file link..."
+                        placeholder="Paste a link to a video, song, or file"
                         className="w-full bg-[#0B0F17] text-sm rounded-xl pl-9 pr-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 border border-white/5 text-slate-200 placeholder-slate-500"
                       />
                     </div>
@@ -566,7 +550,7 @@ export function App() {
                       className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold px-5 py-3 rounded-xl text-sm transition-colors cursor-pointer flex items-center space-x-2 whitespace-nowrap"
                     >
                       {isExtracting ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
-                      <span>{isExtracting ? 'Detecting...' : 'Fetch'}</span>
+                      <span>{isExtracting ? 'Checking...' : 'Check'}</span>
                     </button>
                   </div>
 
@@ -585,7 +569,7 @@ export function App() {
                         )}
                         {!downloadResult.quota.allowed && (
                           <p className="text-xs text-amber-400 font-semibold">
-                            {downloadResult.quota.reason} — upgrade to continue
+                            {downloadResult.quota.reason}
                           </p>
                         )}
                       </div>
@@ -639,7 +623,7 @@ export function App() {
                   {!user && (
                     <p className="text-xs text-slate-500 text-center">
                       <button onClick={() => { setAuthModalMode('login'); setIsAuthModalOpen(true); }} className="text-indigo-400 hover:underline cursor-pointer">Sign in</button>
-                      {' '}to use the downloader. Free users get 3 downloads/day.
+                      {' '}to save files. Free accounts get 3 a day.
                     </p>
                   )}
                 </div>
@@ -654,7 +638,7 @@ export function App() {
                   <div className="max-w-xl space-y-4">
                     <div className="inline-flex items-center space-x-2 bg-amber-500/20 border border-amber-500/30 text-amber-400 px-3 py-1 rounded-full text-xs font-bold">
                       <Star className="w-3.5 h-3.5 fill-amber-400" />
-                      <span>Featured Title</span>
+                      <span>Featured</span>
                     </div>
                     <h1 className="text-3xl md:text-5xl font-extrabold text-white tracking-tight leading-tight">
                       {catalog[0].title}
@@ -681,7 +665,7 @@ export function App() {
                         className="bg-[#1E293B] hover:bg-slate-700 text-slate-200 font-semibold px-5 py-3 rounded-xl border border-white/10 transition-colors cursor-pointer flex items-center space-x-2"
                       >
                         <BookOpen className="w-4 h-4 text-emerald-400" />
-                        <span>Open Reader</span>
+                        <span>Read</span>
                       </button>
                       <button 
                         onClick={() => {
@@ -690,7 +674,7 @@ export function App() {
                         }}
                         className="text-slate-400 hover:text-white text-xs font-semibold px-3 py-2 transition-colors cursor-pointer"
                       >
-                        Details
+                        See details
                       </button>
                     </div>
                   </div>
@@ -712,10 +696,10 @@ export function App() {
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <div>
-                      <h2 className="text-xl md:text-2xl font-bold text-white tracking-tight">Available Catalogue</h2>
-                      <p className="text-xs md:text-sm text-slate-400">Streamed via Cloudflare R2 Edge with short-lived HMAC tokens</p>
+                      <h2 className="text-xl md:text-2xl font-bold text-white tracking-tight">Library</h2>
+                      <p className="text-xs md:text-sm text-slate-400">Audiobooks, books, and video in one place</p>
                     </div>
-                    <span className="text-xs font-semibold text-slate-400">{catalog.length} Titles Loaded</span>
+                    <span className="text-xs font-semibold text-slate-400">{catalog.length} titles</span>
                   </div>
 
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-6">
@@ -750,7 +734,7 @@ export function App() {
                         <div className="mt-3 pt-2.5 border-t border-white/5 flex items-center justify-between">
                           <span className="text-xs font-extrabold text-amber-400">₦{item.price.toLocaleString()}</span>
                           <span className="text-[10px] font-medium text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
-                            In Sub
+                            Included
                           </span>
                         </div>
                       </div>
@@ -767,7 +751,7 @@ export function App() {
                   onClick={() => setActiveTab('discover')} 
                   className="text-xs font-semibold text-slate-400 hover:text-white flex items-center space-x-1 cursor-pointer"
                 >
-                  <span>← Back to Catalogue</span>
+                  <span>← Back</span>
                 </button>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-8 bg-[#131B2B] border border-white/10 p-6 md:p-8 rounded-3xl shadow-xl">
@@ -783,7 +767,7 @@ export function App() {
                         className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl flex items-center justify-center space-x-2 shadow-lg shadow-indigo-600/30 transition-all cursor-pointer"
                       >
                         {isPlaying ? <Pause className="w-4 h-4 fill-white" /> : <Play className="w-4 h-4 fill-white" />}
-                        <span>{isPlaying ? 'Pause Audio' : 'Play Audio Sample'}</span>
+                        <span>{isPlaying ? 'Pause' : 'Play sample'}</span>
                       </button>
 
                       <button 
@@ -791,7 +775,7 @@ export function App() {
                         className="w-full bg-[#1E293B] hover:bg-slate-700 text-emerald-300 font-bold py-2.5 rounded-xl border border-emerald-500/30 flex items-center justify-center space-x-2 transition-colors cursor-pointer"
                       >
                         <BookOpen className="w-4 h-4 text-emerald-400" />
-                        <span>Read Book (In-Browser)</span>
+                        <span>Read</span>
                       </button>
                     </div>
                   </div>
@@ -813,26 +797,23 @@ export function App() {
                         <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-2xl p-4 space-y-1">
                           <p className="text-sm font-bold text-emerald-300 flex items-center space-x-2">
                             <Unlock className="w-4 h-4" />
-                            <span>Full Access — {userTier === 'promax' ? 'Pro Max' : 'Pro'}</span>
+                            <span>You can play this — {userTier === 'promax' ? 'Pro Max' : 'Pro'}</span>
                           </p>
-                          <p className="text-xs text-slate-400">Streamed via secure HMAC tokens. Signed URL active for 15 minutes.</p>
-                          {signedStreamInfo?.url && (
-                            <p className="text-[10px] text-slate-500 truncate mt-1">R2 Endpoint: {signedStreamInfo.url}</p>
-                          )}
+                          <p className="text-xs text-slate-400">Listen and read this title anytime on your plan.</p>
                         </div>
                       ) : (
                         <div className="bg-[#1E293B] border border-indigo-500/30 rounded-2xl p-5 space-y-3">
                           <div className="flex items-center space-x-2">
                             <Lock className="w-4 h-4 text-amber-400" />
-                            <span className="text-sm font-bold text-white">Pro Required to Stream</span>
+                            <span className="text-sm font-bold text-white">This title is on a plan</span>
                           </div>
-                          <p className="text-xs text-slate-400">Upgrade to access this title and the full library — audiobooks, eBooks, videos and more.</p>
+                          <p className="text-xs text-slate-400">Subscribe to listen and read this, plus the rest of the library.</p>
                           <button
                             onClick={() => { setUpgradeContext('stream'); setIsUpgradeModalOpen(true); }}
                             className="w-full bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 text-white font-bold py-3 rounded-xl flex items-center justify-center space-x-2 transition-all cursor-pointer shadow-lg shadow-indigo-600/20"
                           >
                             <Sparkles className="w-4 h-4" />
-                            <span>See Plans — from ₦2,000/mo</span>
+                            <span>See plans from ₦2,000/mo</span>
                           </button>
                         </div>
                       )}
@@ -846,8 +827,8 @@ export function App() {
             {activeTab === 'admin' && adminStats && (
               <div className="space-y-8 max-w-5xl mx-auto">
                 <div>
-                  <h1 className="text-2xl font-extrabold text-white">Owner Operational Command</h1>
-                  <p className="text-xs md:text-sm text-slate-400">Live metrics, server expenses & net monthly distributable cash</p>
+                  <h1 className="text-2xl font-extrabold text-white">Overview</h1>
+                  <p className="text-xs md:text-sm text-slate-400">Subscribers, revenue, and your payout</p>
                 </div>
 
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -862,14 +843,14 @@ export function App() {
                     <span className="text-[11px] text-amber-400 font-semibold">₦3,000/mo each</span>
                   </div>
                   <div className="bg-[#131B2B] border border-white/10 rounded-2xl p-4">
-                    <span className="text-xs text-slate-400 font-medium">Monthly Gross Receipts</span>
+                    <span className="text-xs text-slate-400 font-medium">Revenue this month</span>
                     <p className="text-2xl font-black text-white mt-1">₦{adminStats.monthlyGross.toLocaleString()}</p>
-                    <span className="text-[11px] text-indigo-400 font-semibold">Paystack local fees 1.5%</span>
+                    <span className="text-[11px] text-indigo-400 font-semibold">Before payment fees</span>
                   </div>
                   <div className="bg-[#131B2B] border border-white/10 rounded-2xl p-4">
-                    <span className="text-xs text-slate-400 font-medium">Net Remitted to Owner (80%)</span>
+                    <span className="text-xs text-slate-400 font-medium">Your payout</span>
                     <p className="text-2xl font-black text-emerald-400 mt-1">₦{(adminStats.netDistributable * 0.8).toLocaleString()}</p>
-                    <span className="text-[11px] text-emerald-400 font-semibold">5th of every month</span>
+                    <span className="text-[11px] text-emerald-400 font-semibold">Paid on the 5th</span>
                   </div>
                 </div>
               </div>

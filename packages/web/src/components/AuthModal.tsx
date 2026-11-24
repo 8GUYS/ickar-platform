@@ -33,7 +33,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
       }
       onClose();
     } catch (err: any) {
-      setError(err.message || 'Authentication failed');
+      setError(err.message || 'Something went wrong. Try again.');
     } finally {
       setLoading(false);
     }
@@ -57,9 +57,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
             {mode === 'login' ? 'Sign in to ICKAR' : 'Create an Account'}
           </h2>
           <p className="text-xs text-slate-400">
-            {mode === 'login' 
-              ? 'Access your personal media library and audio streaming' 
-              : 'Join to start reading, listening, and collecting titles'}
+            {mode === 'login'
+              ? 'Pick up your books and listening.'
+              : 'Listen, read, and save what you love.'}
           </p>
         </div>
 
@@ -97,7 +97,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@domain.com"
+                placeholder="you@email.com"
                 className="w-full bg-[#1E293B] border border-white/10 rounded-xl pl-9 pr-4 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
             </div>
@@ -112,7 +112,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="Min. 8 characters"
+                placeholder="At least 8 characters"
                 className="w-full bg-[#1E293B] border border-white/10 rounded-xl pl-9 pr-4 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
             </div>
@@ -123,7 +123,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
             disabled={loading}
             className="w-full bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 text-white font-bold py-2.5 rounded-xl text-sm shadow-lg shadow-indigo-600/30 transition-all cursor-pointer disabled:opacity-50"
           >
-            {loading ? 'Authenticating...' : mode === 'login' ? 'Sign In' : 'Create Account'}
+            {loading ? (mode === 'login' ? 'Signing in...' : 'Creating your account...') : mode === 'login' ? 'Sign in' : 'Create account'}
           </button>
         </form>
 
@@ -141,7 +141,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
             </p>
           ) : (
             <p>
-              Already registered?{' '}
+              Already have an account?{' '}
               <button 
                 type="button"
                 onClick={() => { setMode('login'); setError(null); }}

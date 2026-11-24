@@ -81,7 +81,7 @@ export async function getCatalog(query = '', category = '', type = ''): Promise<
   if (type) params.append('type', type);
 
   const res = await fetch(`${API_BASE}/catalog?${params.toString()}`);
-  if (!res.ok) throw new Error('Failed to fetch catalog');
+  if (!res.ok) throw new Error("We couldn't load the library.");
   return res.json();
 }
 
@@ -102,7 +102,7 @@ export async function getStreamingToken(mediaId: string, token: string): Promise
   });
   if (!res.ok) {
     const err = await res.json();
-    throw new Error(err.error || 'Failed to acquire streaming token');
+    throw new Error(err.error || "We couldn't start playback. Try again.");
   }
   return res.json();
 }
@@ -117,7 +117,7 @@ export async function verifyPaymentDev(type: 'pro' | 'promax' | 'purchase', medi
     },
     body: JSON.stringify({ type, mediaId })
   });
-  if (!res.ok) throw new Error('Payment processing failed');
+  if (!res.ok) throw new Error("We couldn't update your plan. Try again.");
   return res.json();
 }
 
@@ -126,7 +126,7 @@ export async function getAdminStats(token: string): Promise<AdminStats> {
   const res = await fetch(`${API_BASE}/admin/stats`, {
     headers: { Authorization: `Bearer ${token}` }
   });
-  if (!res.ok) throw new Error('Admin stats restricted');
+  if (!res.ok) throw new Error("You don't have access to this page.");
   return res.json();
 }
 
@@ -143,7 +143,7 @@ export async function extractMediaInfo(url: string, token: string): Promise<Medi
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || 'Failed to extract media info');
+    throw new Error(err.error || "We couldn't read that link.");
   }
   return res.json();
 }
@@ -152,7 +152,7 @@ export async function getDownloadQuota(token: string): Promise<QuotaInfo & { tie
   const res = await fetch(`${API_BASE}/downloader/quota`, {
     headers: { Authorization: `Bearer ${token}` }
   });
-  if (!res.ok) throw new Error('Failed to fetch quota');
+  if (!res.ok) throw new Error("We couldn't load your saves.");
   return res.json();
 }
 

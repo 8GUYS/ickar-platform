@@ -59,7 +59,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
     if (!res.ok) {
       const err = await res.json();
-      throw new Error(err.error || 'Login failed');
+      throw new Error(err.error || "We couldn't sign you in. Try again.");
     }
     const data = await res.json();
     setUser(data.user);
@@ -75,7 +75,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
     if (!res.ok) {
       const err = await res.json();
-      throw new Error(err.error || 'Registration failed');
+      throw new Error(err.error || "We couldn't create your account. Try again.");
     }
     const data = await res.json();
     setUser(data.user);
