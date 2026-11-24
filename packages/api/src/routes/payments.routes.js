@@ -18,10 +18,10 @@ const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY || 'sk_test_placeholder'
 // Called by frontend to get a Paystack checkout URL
 // -------------------------------------------------------
 paymentsRouter.post('/initialize', requireAuth, async (req, res) => {
-  const { type, mediaId, amount } = req.body; // type: 'subscription' | 'purchase'
+  const { type, mediaId, amount } = req.body; // type: 'pro' | 'promax' | 'purchase'
 
-  if (!['subscription', 'purchase'].includes(type)) {
-    return res.status(400).json({ error: 'Invalid payment type. Must be subscription or purchase.' });
+  if (!['pro', 'promax', 'purchase'].includes(type)) {
+    return res.status(400).json({ error: 'Invalid payment type. Must be pro, promax or purchase.' });
   }
 
   if (type === 'purchase' && !mediaId) {
@@ -29,7 +29,10 @@ paymentsRouter.post('/initialize', requireAuth, async (req, res) => {
   }
 
   const user = req.user;
-  const paystackAmount = type === 'subscription' ? 250000 : (amount * 100); // Paystack uses kobo
+  let paystackAmount;
+  if (type === 'pro') paystackAmount = 200000;       // ₦2,000 in kobo
+  else if (type === 'promax') paystackAmount = 300000; // ₦3,000 in kobo
+  else paystackAmount = (amount || 0) * 100;
 
   // In production: call Paystack API to initialize transaction
   // For Sprint 1 MVP, return a simulation token
@@ -104,9 +107,10 @@ paymentsRouter.post('/verify-dev', requireAuth, (req, res) => {
   const userId = req.user.id;
   const fakeRef = `dev_${Date.now()}`;
 
-  if (type === 'subscription') {
-    const sub = activateSubscription(userId, fakeRef);
-    return res.json({ success: true, subscription: sub, message: 'Dev subscription activated' });
+  if (type === 'subscription' || type === 'pro' || type === 'promax') {
+    const tier = type === 'promax' ? 'promax' : 'pro';
+    const sub = activateSubscription(userId, fakeRef, tier);
+    return res.json({ success: true, subscription: sub, tier, message: `Dev ${tier} subscription activated` });
   }
 
   if (type === 'purchase' && mediaId) {

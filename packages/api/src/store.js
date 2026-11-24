@@ -1,16 +1,26 @@
 // ============================================================
-// ICKAR API — In-Memory Data Store (Sprint 1 / Pre-Database)
-// Will be replaced by PostgreSQL + Prisma in Sprint 2
+// ICKAR API — In-Memory Data Store
 // ============================================================
 
 import { v4 as uuidv4 } from 'uuid';
+
+// ---- TIER CONFIG ----
+// Tiers: 'free' | 'pro' | 'promax'
+// Pro:    ₦2,000/mo — stream all content, no downloads
+// ProMax: ₦3,000/mo — stream all + unlimited downloads
+export const TIER_PRICES = { pro: 200000, promax: 300000 }; // kobo
+export const DOWNLOAD_QUOTAS = { free: 3, pro: 15, promax: Infinity };
 
 // ---- USERS ----
 export const users = new Map(); // id -> user
 
 export function createUser({ email, passwordHash, name, role = 'subscriber' }) {
   const id = uuidv4();
-  const user = { id, email, passwordHash, name, role, createdAt: new Date().toISOString() };
+  const user = {
+    id, email, passwordHash, name, role,
+    tier: 'free',           // 'free' | 'pro' | 'promax'
+    createdAt: new Date().toISOString()
+  };
   users.set(id, user);
   return user;
 }
@@ -24,6 +34,13 @@ export function findUserByEmail(email) {
 
 export function findUserById(id) {
   return users.get(id) || null;
+}
+
+export function setUserTier(userId, tier) {
+  const user = users.get(userId);
+  if (!user) return null;
+  user.tier = tier;
+  return user;
 }
 
 // ---- MEDIA CATALOG ----
@@ -121,10 +138,12 @@ export function checkEntitlement(userId, mediaId) {
 // ---- SUBSCRIPTIONS ----
 export const subscriptions = new Map(); // userId -> subscription
 
-export function activateSubscription(userId, paystackRef) {
+// tier: 'pro' | 'promax'
+export function activateSubscription(userId, paystackRef, tier = 'pro') {
   const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-  const sub = { userId, paystackRef, activatedAt: new Date().toISOString(), expiresAt, status: 'active' };
+  const sub = { userId, paystackRef, tier, activatedAt: new Date().toISOString(), expiresAt, status: 'active' };
   subscriptions.set(userId, sub);
+  setUserTier(userId, tier);
   // Grant entitlement on all subscription-included media
   for (const media of mediaCatalog.values()) {
     if (media.isSubscriptionIncluded) {
@@ -148,13 +167,46 @@ export function createOrder({ userId, mediaId, amount, paystackRef }) {
   return order;
 }
 
+// ---- DOWNLOAD QUOTA ----
+// Key: `${userId}:${YYYY-MM-DD}` -> count
+export const downloadCounts = new Map();
+
+export function getTodayKey(userId) {
+  const today = new Date().toISOString().slice(0, 10);
+  return `${userId}:${today}`;
+}
+
+export function getDownloadCount(userId) {
+  return downloadCounts.get(getTodayKey(userId)) || 0;
+}
+
+export function incrementDownloadCount(userId) {
+  const key = getTodayKey(userId);
+  const current = downloadCounts.get(key) || 0;
+  downloadCounts.set(key, current + 1);
+  return current + 1;
+}
+
+export function checkDownloadQuota(userId) {
+  const user = findUserById(userId);
+  if (!user) return { allowed: false, reason: 'User not found' };
+  const tier = user.tier || 'free';
+  const quota = DOWNLOAD_QUOTAS[tier];
+  const used = getDownloadCount(userId);
+  if (quota !== Infinity && used >= quota) {
+    return { allowed: false, used, quota, tier, reason: `Daily limit reached (${used}/${quota})` };
+  }
+  return { allowed: true, used, quota: quota === Infinity ? -1 : quota, tier };
+}
+
 // ---- ADMIN ANALYTICS ----
 export function getAdminStats() {
-  const totalSubscribers = subscriptions.size;
   const totalOrders = orders.size;
   const totalUsers = users.size;
-  const monthlyGross = [...subscriptions.values()]
-    .filter(s => s.status === 'active').length * 2500;
+  const proSubs = [...subscriptions.values()].filter(s => s.status === 'active' && s.tier === 'pro').length;
+  const promaxSubs = [...subscriptions.values()].filter(s => s.status === 'active' && s.tier === 'promax').length;
+  const totalSubscribers = proSubs + promaxSubs;
+  const monthlyGross = (proSubs * 2000) + (promaxSubs * 3000);
   const cloudBill = 68200; // simulated
   const creatorRoyalties = Math.round(monthlyGross * 0.20);
   const operatorFee = 400000;
@@ -164,6 +216,8 @@ export function getAdminStats() {
     totalUsers,
     totalSubscribers,
     totalOrders,
+    proSubs,
+    promaxSubs,
     monthlyGross,
     cloudBill,
     creatorRoyalties,

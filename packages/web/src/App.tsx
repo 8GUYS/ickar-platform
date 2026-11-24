@@ -6,7 +6,6 @@ import {
   RotateCw, 
   BookOpen, 
   Headphones, 
-  ShieldCheck, 
   Search, 
   Sparkles, 
   Volume2, 
@@ -16,16 +15,25 @@ import {
   Lock, 
   Unlock,
   LogOut,
-  User as UserIcon
+  User as UserIcon,
+  Download,
+  Link as LinkIcon,
+  Crown,
+  X,
 } from 'lucide-react';
 import { 
   getCatalog, 
   checkEntitlement, 
   getStreamingToken, 
   verifyPaymentDev, 
-  getAdminStats, 
+  getAdminStats,
+  extractMediaInfo,
+  downloadMedia,
+  getDownloadQuota,
   type CatalogItem, 
-  type AdminStats 
+  type AdminStats,
+  type UserTier,
+  type QuotaInfo,
 } from './services/api';
 import { useAuth } from './context/AuthContext';
 import { AuthModal } from './components/AuthModal';
@@ -54,6 +62,19 @@ export function App() {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [authModalMode, setAuthModalMode] = useState<'login' | 'register'>('login');
   const [isReaderOpen, setIsReaderOpen] = useState(false);
+
+  // Tier & paywall
+  const [userTier, setUserTier] = useState<UserTier>('free');
+  const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false);
+  const [upgradeContext, setUpgradeContext] = useState<'stream' | 'download'>('stream');
+
+  // Downloader bar
+  const [downloaderUrl, setDownloaderUrl] = useState('');
+  const [isExtracting, setIsExtracting] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadResult, setDownloadResult] = useState<{ title: string; filename: string; mediaType: string; quota: QuotaInfo } | null>(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+  const [downloadQuota, setDownloadQuota] = useState<QuotaInfo | null>(null);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const speeds = [1.0, 1.25, 1.5, 2.0];
@@ -114,11 +135,13 @@ export function App() {
           // Fallback view for demo
           setAdminStats({
             totalUsers: 342,
-            totalSubscribers: 342,
+            totalSubscribers: 184,
             totalOrders: 89,
-            monthlyGross: 855000,
+            proSubs: 120,
+            promaxSubs: 64,
+            monthlyGross: 432000,
             cloudBill: 68200,
-            creatorRoyalties: 171000,
+            creatorRoyalties: 86400,
             operatorFee: 400000,
             netDistributable: 215800,
             catalogCount: 4
@@ -126,6 +149,101 @@ export function App() {
         });
     }
   }, [activeTab, token]);
+
+  // Sync user tier from API whenever user logs in/out
+  useEffect(() => {
+    if (!token) {
+      setUserTier('free');
+      setDownloadQuota(null);
+      return;
+    }
+    getDownloadQuota(token)
+      .then((q) => {
+        setUserTier(q.tier);
+        setDownloadQuota(q);
+      })
+      .catch(() => setUserTier('free'));
+  }, [token]);
+
+  // Downloader handlers
+  const handleExtract = async () => {
+    if (!downloaderUrl.trim()) return;
+    if (!token) {
+      setAuthModalMode('login');
+      setIsAuthModalOpen(true);
+      return;
+    }
+    setIsExtracting(true);
+    setDownloadResult(null);
+    setDownloadError(null);
+    try {
+      const info = await extractMediaInfo(downloaderUrl.trim(), token);
+      if (!info.downloadable) {
+        setDownloadError(info.message || 'Could not detect a downloadable file at this URL.');
+        return;
+      }
+      setDownloadResult({
+        title: info.title,
+        filename: info.filename,
+        mediaType: info.mediaType,
+        quota: info.quotaCheck,
+      });
+    } catch (e: any) {
+      setDownloadError(e.message || 'Failed to process URL');
+    } finally {
+      setIsExtracting(false);
+    }
+  };
+
+  const handleDownload = async () => {
+    if (!downloadResult || !token) return;
+    // Check if quota allows
+    if (downloadResult.quota && !downloadResult.quota.allowed) {
+      setIsUpgradeModalOpen(true);
+      setUpgradeContext('download');
+      return;
+    }
+    setIsDownloading(true);
+    try {
+      await downloadMedia(downloaderUrl.trim(), downloadResult.filename, token);
+      // Refresh quota
+      const q = await getDownloadQuota(token);
+      setDownloadQuota(q);
+      setDownloadResult(null);
+      setDownloaderUrl('');
+    } catch (e: any) {
+      if (e.message?.includes('quota') || e.message?.includes('limit')) {
+        setIsUpgradeModalOpen(true);
+        setUpgradeContext('download');
+      } else {
+        setDownloadError(e.message || 'Download failed');
+      }
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
+  const handleActivateTier = async (tier: 'pro' | 'promax') => {
+    if (!token) {
+      setAuthModalMode('login');
+      setIsAuthModalOpen(true);
+      return;
+    }
+    try {
+      await verifyPaymentDev(tier, undefined, token);
+      setUserTier(tier);
+      if (tier === 'promax' || tier === 'pro') setHasEntitlement(true);
+      const q = await getDownloadQuota(token);
+      setDownloadQuota(q);
+      setIsUpgradeModalOpen(false);
+      if (selectedMedia) {
+        const stream = await getStreamingToken(selectedMedia.id, token);
+        setSignedStreamInfo({ url: stream.audioStreamUrl, expires: stream.expiresAt });
+      }
+    } catch (e: any) {
+      alert(e.message || 'Upgrade failed');
+    }
+  };
 
   // Audio element management
   useEffect(() => {
@@ -191,25 +309,6 @@ export function App() {
     return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
   };
 
-  const handleSimulatePayment = async (type: 'subscription' | 'purchase') => {
-    if (!token) {
-      setAuthModalMode('login');
-      setIsAuthModalOpen(true);
-      return;
-    }
-    try {
-      await verifyPaymentDev(type, selectedMedia?.id, token);
-      setHasEntitlement(true);
-      alert(`Paystack Webhook Verified! ₦${type === 'subscription' ? '2,500' : selectedMedia?.price} payment confirmed. Entitlements updated.`);
-      
-      if (selectedMedia) {
-        const stream = await getStreamingToken(selectedMedia.id, token);
-        setSignedStreamInfo({ url: stream.audioStreamUrl, expires: stream.expiresAt });
-      }
-    } catch (e: any) {
-      alert(e.message || 'Payment simulation failed');
-    }
-  };
 
   return (
     <div className="min-h-screen bg-[#0B0F17] text-slate-100 flex flex-col font-sans pb-28">
@@ -253,18 +352,27 @@ export function App() {
             />
           </div>
 
-          {hasEntitlement ? (
-            <div className="flex items-center space-x-1.5 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 px-3 py-1.5 rounded-full text-xs font-semibold">
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              <span>Full Access Unlocked</span>
+          {/* Tier badge — only shown when logged in and has a paid tier */}
+          {user && userTier === 'pro' && (
+            <div className="hidden sm:flex items-center space-x-1 bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 px-2.5 py-1 rounded-full text-xs font-bold">
+              <Sparkles className="w-3 h-3" />
+              <span>Pro</span>
             </div>
-          ) : (
-            <button 
-              onClick={() => handleSimulatePayment('subscription')}
-              className="bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 text-white text-xs font-bold px-4 py-2 rounded-full shadow-md shadow-indigo-600/30 transition-all flex items-center space-x-1 cursor-pointer"
+          )}
+          {user && userTier === 'promax' && (
+            <div className="hidden sm:flex items-center space-x-1 bg-amber-500/10 border border-amber-500/30 text-amber-400 px-2.5 py-1 rounded-full text-xs font-bold">
+              <Crown className="w-3 h-3" />
+              <span>Pro Max</span>
+            </div>
+          )}
+          {/* Upgrade button — only for free users who are logged in */}
+          {user && userTier === 'free' && (
+            <button
+              onClick={() => { setUpgradeContext('stream'); setIsUpgradeModalOpen(true); }}
+              className="hidden sm:flex items-center space-x-1 bg-indigo-600/20 hover:bg-indigo-600/40 border border-indigo-500/40 text-indigo-300 px-3 py-1.5 rounded-full text-xs font-semibold transition-colors cursor-pointer"
             >
-              <Sparkles className="w-3.5 h-3.5 mr-1" />
-              <span>Subscribe ₦2,500/mo</span>
+              <Sparkles className="w-3 h-3" />
+              <span>Upgrade</span>
             </button>
           )}
 
@@ -296,6 +404,86 @@ export function App() {
         </div>
       </header>
 
+      {/* Upgrade / Paywall Modal */}
+      {isUpgradeModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="bg-[#131B2B] border border-white/10 rounded-3xl p-8 max-w-lg w-full shadow-2xl relative">
+            <button
+              onClick={() => setIsUpgradeModalOpen(false)}
+              className="absolute top-4 right-4 text-slate-500 hover:text-white transition-colors cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <div className="text-center space-y-2 mb-8">
+              <div className="w-14 h-14 bg-indigo-600/20 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                {upgradeContext === 'download' ? <Download className="w-7 h-7 text-indigo-400" /> : <Sparkles className="w-7 h-7 text-indigo-400" />}
+              </div>
+              <h2 className="text-2xl font-extrabold text-white">
+                {upgradeContext === 'download' ? 'More Downloads' : 'Full Access'}
+              </h2>
+              <p className="text-slate-400 text-sm">
+                {upgradeContext === 'download'
+                  ? 'You\'ve hit your daily download limit. Upgrade for more.'
+                  : 'Stream all audiobooks, eBooks, videos, and more.'}
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              {/* Pro */}
+              <div className="bg-[#0B0F17] border border-indigo-500/30 rounded-2xl p-5 space-y-3">
+                <div className="flex items-center space-x-2">
+                  <Sparkles className="w-5 h-5 text-indigo-400" />
+                  <span className="font-bold text-white text-sm">Pro</span>
+                </div>
+                <div>
+                  <span className="text-2xl font-black text-white">₦2,000</span>
+                  <span className="text-slate-400 text-xs">/mo</span>
+                </div>
+                <ul className="text-xs text-slate-300 space-y-1.5">
+                  <li className="flex items-center space-x-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" /><span>Unlimited streaming</span></li>
+                  <li className="flex items-center space-x-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" /><span>All audiobooks, eBooks & videos</span></li>
+                  <li className="flex items-center space-x-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" /><span>15 downloads/day</span></li>
+                </ul>
+                <button
+                  onClick={() => handleActivateTier('pro')}
+                  className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2.5 rounded-xl text-sm transition-colors cursor-pointer"
+                >
+                  Get Pro
+                </button>
+              </div>
+              {/* Pro Max */}
+              <div className="bg-[#0B0F17] border border-amber-500/40 rounded-2xl p-5 space-y-3 relative overflow-hidden">
+                <div className="absolute top-2 right-2 bg-amber-500/20 text-amber-400 text-[10px] font-bold px-2 py-0.5 rounded-full border border-amber-500/30">BEST</div>
+                <div className="flex items-center space-x-2">
+                  <Crown className="w-5 h-5 text-amber-400" />
+                  <span className="font-bold text-white text-sm">Pro Max</span>
+                </div>
+                <div>
+                  <span className="text-2xl font-black text-white">₦3,000</span>
+                  <span className="text-slate-400 text-xs">/mo</span>
+                </div>
+                <ul className="text-xs text-slate-300 space-y-1.5">
+                  <li className="flex items-center space-x-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" /><span>Everything in Pro</span></li>
+                  <li className="flex items-center space-x-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" /><span>Unlimited downloads</span></li>
+                  <li className="flex items-center space-x-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" /><span>Download to device</span></li>
+                </ul>
+                <button
+                  onClick={() => handleActivateTier('promax')}
+                  className="w-full bg-amber-500 hover:bg-amber-400 text-black font-bold py-2.5 rounded-xl text-sm transition-colors cursor-pointer"
+                >
+                  Get Pro Max
+                </button>
+              </div>
+            </div>
+
+            {/* Free tier reminder */}
+            <p className="text-center text-xs text-slate-500 mt-4">
+              Free: 3 downloads/day &nbsp;·&nbsp; Pro: 15/day &nbsp;·&nbsp; Pro Max: Unlimited
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-6 py-8">
         {loading ? (
@@ -305,6 +493,105 @@ export function App() {
           </div>
         ) : (
           <>
+            {/* ── Universal Media Downloader Bar ── */}
+            {activeTab === 'discover' && (
+              <div className="mb-10">
+                <div className="bg-[#131B2B] border border-white/10 rounded-2xl p-5 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <Download className="w-4 h-4 text-indigo-400" />
+                      <span className="text-sm font-bold text-white">Universal Downloader</span>
+                      <span className="text-[10px] text-slate-500 bg-slate-800 px-2 py-0.5 rounded-full border border-white/5">
+                        MP3 · MP4 · PDF · Direct Links
+                      </span>
+                    </div>
+                    {/* Quota display */}
+                    {user && downloadQuota && (
+                      <span className="text-xs text-slate-400 font-medium">
+                        {downloadQuota.quota === -1
+                          ? '∞ downloads'
+                          : `${downloadQuota.used}/${downloadQuota.quota} today`}
+                        {' '}
+                        <span className={`font-bold ${
+                          userTier === 'promax' ? 'text-amber-400' :
+                          userTier === 'pro' ? 'text-indigo-400' : 'text-slate-400'
+                        }`}>
+                          ({userTier === 'promax' ? 'Pro Max' : userTier === 'pro' ? 'Pro' : 'Free'})
+                        </span>
+                      </span>
+                    )}
+                  </div>
+
+                  {/* URL input */}
+                  <div className="flex gap-2">
+                    <div className="flex-1 relative">
+                      <LinkIcon className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                      <input
+                        type="url"
+                        value={downloaderUrl}
+                        onChange={(e) => { setDownloaderUrl(e.target.value); setDownloadResult(null); setDownloadError(null); }}
+                        onKeyDown={(e) => e.key === 'Enter' && handleExtract()}
+                        placeholder="Paste any direct .mp3, .mp4, .pdf link..."
+                        className="w-full bg-[#0B0F17] text-sm rounded-xl pl-9 pr-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 border border-white/5 text-slate-200 placeholder-slate-500"
+                      />
+                    </div>
+                    <button
+                      onClick={handleExtract}
+                      disabled={isExtracting || !downloaderUrl.trim()}
+                      className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold px-5 py-3 rounded-xl text-sm transition-colors cursor-pointer flex items-center space-x-2 whitespace-nowrap"
+                    >
+                      {isExtracting ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+                      <span>{isExtracting ? 'Detecting...' : 'Fetch'}</span>
+                    </button>
+                  </div>
+
+                  {/* Result preview */}
+                  {downloadResult && (
+                    <div className="flex items-center justify-between bg-[#0B0F17] border border-emerald-500/20 rounded-xl p-4">
+                      <div className="space-y-0.5">
+                        <p className="text-sm font-semibold text-white truncate max-w-xs">{downloadResult.title}</p>
+                        <p className="text-xs text-slate-400 capitalize">{downloadResult.mediaType} file</p>
+                        {!downloadResult.quota.allowed && (
+                          <p className="text-xs text-amber-400 font-semibold">
+                            {downloadResult.quota.reason} — upgrade to continue
+                          </p>
+                        )}
+                      </div>
+                      <button
+                        onClick={downloadResult.quota.allowed ? handleDownload : () => { setUpgradeContext('download'); setIsUpgradeModalOpen(true); }}
+                        disabled={isDownloading}
+                        className={`flex items-center space-x-2 font-bold text-sm px-4 py-2.5 rounded-xl transition-colors cursor-pointer ${
+                          downloadResult.quota.allowed
+                            ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                            : 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 border border-amber-500/30'
+                        }`}
+                      >
+                        {isDownloading
+                          ? <RefreshCw className="w-4 h-4 animate-spin" />
+                          : downloadResult.quota.allowed ? <Download className="w-4 h-4" /> : <Crown className="w-4 h-4" />}
+                        <span>{isDownloading ? 'Downloading...' : downloadResult.quota.allowed ? 'Download' : 'Upgrade'}</span>
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Error */}
+                  {downloadError && (
+                    <div className="text-xs text-rose-400 bg-rose-500/10 border border-rose-500/20 rounded-xl px-4 py-3">
+                      {downloadError}
+                    </div>
+                  )}
+
+                  {/* Not signed in hint */}
+                  {!user && (
+                    <p className="text-xs text-slate-500 text-center">
+                      <button onClick={() => { setAuthModalMode('login'); setIsAuthModalOpen(true); }} className="text-indigo-400 hover:underline cursor-pointer">Sign in</button>
+                      {' '}to use the downloader. Free users get 3 downloads/day.
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Discover Tab */}
             {activeTab === 'discover' && catalog.length > 0 && (
               <div className="space-y-10">
@@ -466,57 +753,34 @@ export function App() {
                       {selectedMedia.description}
                     </p>
 
-                    {/* Entitlement Status & Pricing */}
+                    {/* Access Status — contextual paywall only */}
                     <div className="space-y-3 pt-2">
-                      <div className="flex items-center justify-between">
-                        <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Access Status</h3>
-                        {hasEntitlement ? (
-                          <span className="text-xs font-bold text-emerald-400 flex items-center space-x-1">
-                            <Unlock className="w-3.5 h-3.5" />
-                            <span>Entitled & Licensed</span>
-                          </span>
-                        ) : (
-                          <span className="text-xs font-bold text-amber-400 flex items-center space-x-1">
-                            <Lock className="w-3.5 h-3.5" />
-                            <span>Subscription Required</span>
-                          </span>
-                        )}
-                      </div>
-
                       {hasEntitlement ? (
                         <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-2xl p-4 space-y-1">
-                          <p className="text-sm font-bold text-emerald-300">You own access to this publication.</p>
-                          <p className="text-xs text-slate-400">Streamed through secure HMAC tokens. Signed URL active for 15 minutes.</p>
+                          <p className="text-sm font-bold text-emerald-300 flex items-center space-x-2">
+                            <Unlock className="w-4 h-4" />
+                            <span>Full Access — {userTier === 'promax' ? 'Pro Max' : 'Pro'}</span>
+                          </p>
+                          <p className="text-xs text-slate-400">Streamed via secure HMAC tokens. Signed URL active for 15 minutes.</p>
                           {signedStreamInfo?.url && (
                             <p className="text-[10px] text-slate-500 truncate mt-1">R2 Endpoint: {signedStreamInfo.url}</p>
                           )}
                         </div>
                       ) : (
-                        <>
-                          {/* Option 1: Subscription */}
-                          <div className="bg-[#1E293B] border-2 border-indigo-500/60 rounded-2xl p-4 flex items-center justify-between">
-                            <div className="space-y-1">
-                              <div className="flex items-center space-x-2">
-                                <span className="font-extrabold text-sm text-white">ICKAR Monthly Pass</span>
-                                <span className="text-[10px] bg-indigo-500/20 text-indigo-400 px-2 py-0.5 rounded font-bold">RECOMMENDED</span>
-                              </div>
-                              <p className="text-xs text-slate-400">Unlimited access to this title + entire library</p>
-                            </div>
-                            <div className="text-right">
-                              <span className="text-base font-extrabold text-white">₦2,500</span>
-                              <span className="text-xs text-slate-400">/mo</span>
-                            </div>
+                        <div className="bg-[#1E293B] border border-indigo-500/30 rounded-2xl p-5 space-y-3">
+                          <div className="flex items-center space-x-2">
+                            <Lock className="w-4 h-4 text-amber-400" />
+                            <span className="text-sm font-bold text-white">Pro Required to Stream</span>
                           </div>
-
-                          {/* Paystack Checkout Button */}
-                          <button 
-                            onClick={() => handleSimulatePayment('subscription')}
-                            className="w-full bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-emerald-600/20 transition-all flex items-center justify-center space-x-2 cursor-pointer"
+                          <p className="text-xs text-slate-400">Upgrade to access this title and the full library — audiobooks, eBooks, videos and more.</p>
+                          <button
+                            onClick={() => { setUpgradeContext('stream'); setIsUpgradeModalOpen(true); }}
+                            className="w-full bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 text-white font-bold py-3 rounded-xl flex items-center justify-center space-x-2 transition-all cursor-pointer shadow-lg shadow-indigo-600/20"
                           >
-                            <ShieldCheck className="w-5 h-5" />
-                            <span>Subscribe via Paystack (Cards / Transfer)</span>
+                            <Sparkles className="w-4 h-4" />
+                            <span>See Plans — from ₦2,000/mo</span>
                           </button>
-                        </>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -534,19 +798,19 @@ export function App() {
 
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div className="bg-[#131B2B] border border-white/10 rounded-2xl p-4">
-                    <span className="text-xs text-slate-400 font-medium">Paying Subscribers</span>
-                    <p className="text-2xl font-black text-white mt-1">{adminStats.totalSubscribers}</p>
-                    <span className="text-[11px] text-emerald-400 font-semibold">Active accounts</span>
+                    <span className="text-xs text-slate-400 font-medium">Pro Subscribers</span>
+                    <p className="text-2xl font-black text-indigo-400 mt-1">{(adminStats as any).proSubs ?? adminStats.totalSubscribers}</p>
+                    <span className="text-[11px] text-indigo-400 font-semibold">₦2,000/mo each</span>
+                  </div>
+                  <div className="bg-[#131B2B] border border-white/10 rounded-2xl p-4">
+                    <span className="text-xs text-slate-400 font-medium">Pro Max Subscribers</span>
+                    <p className="text-2xl font-black text-amber-400 mt-1">{(adminStats as any).promaxSubs ?? 0}</p>
+                    <span className="text-[11px] text-amber-400 font-semibold">₦3,000/mo each</span>
                   </div>
                   <div className="bg-[#131B2B] border border-white/10 rounded-2xl p-4">
                     <span className="text-xs text-slate-400 font-medium">Monthly Gross Receipts</span>
                     <p className="text-2xl font-black text-white mt-1">₦{adminStats.monthlyGross.toLocaleString()}</p>
                     <span className="text-[11px] text-indigo-400 font-semibold">Paystack local fees 1.5%</span>
-                  </div>
-                  <div className="bg-[#131B2B] border border-white/10 rounded-2xl p-4">
-                    <span className="text-xs text-slate-400 font-medium">Monthly Cloud Bill</span>
-                    <p className="text-2xl font-black text-white mt-1">₦{adminStats.cloudBill.toLocaleString()}</p>
-                    <span className="text-[11px] text-slate-400 font-semibold">Cloudflare R2 + DB</span>
                   </div>
                   <div className="bg-[#131B2B] border border-white/10 rounded-2xl p-4">
                     <span className="text-xs text-slate-400 font-medium">Net Remitted to Owner (80%)</span>

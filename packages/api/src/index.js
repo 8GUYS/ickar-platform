@@ -11,6 +11,7 @@ import { streamingRouter } from './routes/streaming.routes.js';
 import { adminRouter } from './routes/admin.routes.js';
 import { googlePlayRouter } from './routes/google-play.routes.js';
 import { appleIapRouter } from './routes/apple-iap.routes.js';
+import { downloaderRouter } from './routes/downloader.routes.js';
 
 // ============================================================
 // Bootstrap admin user (dev only)
@@ -71,6 +72,7 @@ app.use('/api/catalog', catalogRouter);
 app.use('/api/payments', paymentsRouter);
 app.use('/api/stream', streamingRouter);
 app.use('/api/admin', adminRouter);
+app.use('/api/downloader', downloaderRouter);
 app.use('/api/webhooks/google-play', googlePlayRouter);
 app.use('/api/webhooks/apple-iap', appleIapRouter);
 
