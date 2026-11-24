@@ -17,7 +17,7 @@ export const users = new Map(); // id -> user
 export function createUser({ email, passwordHash, name, role = 'subscriber' }) {
   const id = uuidv4();
   const user = {
-    id, email, passwordHash, name, role,
+    id, email: email.trim().toLowerCase(), passwordHash, name, role,
     tier: 'free',           // 'free' | 'pro' | 'promax'
     createdAt: new Date().toISOString()
   };
@@ -26,8 +26,9 @@ export function createUser({ email, passwordHash, name, role = 'subscriber' }) {
 }
 
 export function findUserByEmail(email) {
+  const normalizedEmail = email.trim().toLowerCase();
   for (const user of users.values()) {
-    if (user.email === email) return user;
+    if (user.email.toLowerCase() === normalizedEmail) return user;
   }
   return null;
 }

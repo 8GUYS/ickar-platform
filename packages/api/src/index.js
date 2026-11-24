@@ -35,7 +35,19 @@ const PORT = process.env.PORT || 3001;
 
 // Security middlewares
 app.use(helmet());
-app.use(cors({ origin: process.env.CORS_ORIGIN || '*', credentials: true }));
+const allowedOrigins = (process.env.CORS_ORIGIN || '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+app.use(cors({
+  origin: allowedOrigins.length
+    ? (origin, callback) => {
+        if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+        return callback(new Error('Origin not allowed'));
+      }
+    : '*',
+  credentials: true,
+}));
 
 // Rate limiting — global
 app.use(rateLimit({

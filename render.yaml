@@ -27,5 +27,5 @@ services:
       - key: DATABASE_URL
         sync: false
       - key: CORS_ORIGIN
-        value: https://ickar.vercel.app
+        value: https://ickar.ng,https://www.ickar.ng,https://ickar.vercel.app
     healthCheckPath: /health

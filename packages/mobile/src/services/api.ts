@@ -3,9 +3,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { MediaItem, User, Entitlement, StreamToken } from '../types';
 
 // In dev: use local API. In prod: replace with your Render/Railway URL
-const BASE_URL = __DEV__
-  ? 'http://10.0.2.2:3001'   // Android emulator → host machine localhost
-  : 'https://api.ickar.ng';
+const BASE_URL = process.env.EXPO_PUBLIC_API_URL
+  ?? (__DEV__ ? 'http://10.0.2.2:3001' : 'https://api.ickar.ng');
 
 async function getAuthHeader(): Promise<Record<string, string>> {
   const token = await AsyncStorage.getItem('ickar_access_token');
@@ -26,8 +25,8 @@ async function request<T>(
     },
   });
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ message: res.statusText }));
-    throw new Error(err.message ?? `HTTP ${res.status}`);
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error ?? err.message ?? `HTTP ${res.status}`);
   }
   return res.json() as Promise<T>;
 }

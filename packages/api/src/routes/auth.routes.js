@@ -24,7 +24,8 @@ authRouter.post('/register', async (req, res) => {
     return res.status(400).json({ error: 'Please check your details and try again.', issues: result.error.issues });
   }
 
-  const { name, email, password } = result.data;
+  const { name, password } = result.data;
+  const email = result.data.email.trim().toLowerCase();
   if (findUserByEmail(email)) {
     return res.status(409).json({ error: 'That email already has an account.' });
   }
@@ -46,7 +47,8 @@ authRouter.post('/login', async (req, res) => {
     return res.status(400).json({ error: 'Please check your details and try again.', issues: result.error.issues });
   }
 
-  const { email, password } = result.data;
+  const email = result.data.email.trim().toLowerCase();
+  const { password } = result.data;
   const user = findUserByEmail(email);
   if (!user) {
     return res.status(401).json({ error: "That email or password doesn't match." });
